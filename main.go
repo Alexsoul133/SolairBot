@@ -30,7 +30,16 @@ func main() {
 	updates.Clear()
 
 	for update := range updates {
+		// if update.ChannelPost.Text == "!sun" {
+		// 	bot.Send(tgbotapi.NewStickerShare(update.Message.Chat.ID, "CAADAgADOgAD5R-VAnqF-5FEu7a2Ag"))
+		// 	continue
+		// }
 		if update.Message == nil {
+			continue
+		}
+
+		if update.Message.Text == "!sun" {
+			bot.Send(tgbotapi.NewStickerShare(update.Message.Chat.ID, "CAADAgADOgAD5R-VAnqF-5FEu7a2Ag"))
 			continue
 		}
 		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
