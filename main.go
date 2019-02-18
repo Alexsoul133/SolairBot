@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -27,31 +26,36 @@ var dbInfo = fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=
 	dbname,
 	sslmode)
 
-type SearchResults struct {
-	ready   bool
-	Query   string
-	Results []Result
-}
+// type Korovan string {
+// 	Chat_ID
+// }
 
-type Result struct {
-	Name, Description, URL string
-}
+// не нужное
+// type SearchResults struct {
+// 	ready   bool
+// 	Query   string
+// 	Results []Result
+// }
 
-func (sr *SearchResults) UnmarshalJSON(bs []byte) error {
-	array := []interface{}{}
-	if err := json.Unmarshal(bs, &array); err != nil {
-		return err
-	}
-	sr.Query = array[0].(string)
-	for i := range array[1].([]interface{}) {
-		sr.Results = append(sr.Results, Result{
-			array[1].([]interface{})[i].(string),
-			array[2].([]interface{})[i].(string),
-			array[3].([]interface{})[i].(string),
-		})
-	}
-	return nil
-}
+// type Result struct {
+// 	Name, Description, URL string
+// }
+
+// func (sr *SearchResults) UnmarshalJSON(bs []byte) error {
+// 	array := []interface{}{}
+// 	if err := json.Unmarshal(bs, &array); err != nil {
+// 		return err
+// 	}
+// 	sr.Query = array[0].(string)
+// 	for i := range array[1].([]interface{}) {
+// 		sr.Results = append(sr.Results, Result{
+// 			array[1].([]interface{})[i].(string),
+// 			array[2].([]interface{})[i].(string),
+// 			array[3].([]interface{})[i].(string),
+// 		})
+// 	}
+// 	return nil
+// }
 
 //Создаем таблицу users в БД при подключении к ней
 func createTable() error {
@@ -100,6 +104,8 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
+	tolerance := 1
+	// buf1 := ""
 
 	bot.Debug = true
 
@@ -117,19 +123,25 @@ func main() {
 	updates.Clear()
 
 	for update := range updates {
-		// if update.ChannelPost.Text == "!sun" {
-		// 	bot.Send(tgbotapi.NewStickerShare(update.Message.Chat.ID, "CAADAgADOgAD5R-VAnqF-5FEu7a2Ag"))
-		// 	continue
-		// }
 		if update.Message == nil {
 			continue
 		}
 
-		if update.Message.Text == "!sun" {
+		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
+
+		// if update.Message.Text == "!sun" {
+		// 	bot.Send(tgbotapi.NewStickerShare(update.Message.Chat.ID, "CAADAgADOgAD5R-VAnqF-5FEu7a2Ag"))
+		// 	continue
+		// }
+
+		if strings.Contains(update.Message.Text, "!sun") {
 			bot.Send(tgbotapi.NewStickerShare(update.Message.Chat.ID, "CAADAgADOgAD5R-VAnqF-5FEu7a2Ag"))
 			continue
 		}
-		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
+		if strings.Contains(update.Message.Text, "Ты") || strings.Contains(update.Message.Text, "задерж") {
+			reply = "Схоронил корован для сравнения"
+			continue
+		}
 
 		switch update.Message.Command() {
 		case "start":
@@ -139,16 +151,45 @@ func main() {
 			bot.Send(tgbotapi.NewStickerShare(update.Message.Chat.ID, "CAADAgADOgAD5R-VAnqF-5FEu7a2Ag"))
 			continue
 		case "info":
-			reply = fmt.Sprintf("@%v \nID: %v \nMessageID: ^v\nTimeMsg:  %v \nTimeNow: %v",
+			t := time.Now()
+			reply = fmt.Sprintf("@%v \nID: %v \nMessageID: %v \nTimeMsg:  %v \nTimeNow: %v",
 				update.Message.ReplyToMessage.From.UserName,
 				update.Message.ReplyToMessage.From.ID,
-
+				update.Message.ReplyToMessage.MessageID,
 				update.Message.ReplyToMessage.Time().Format(time.RFC1123Z),
-				time.Now().Format(time.RFC1123Z))
+				t.Format(time.RFC1123Z))
+
+		case "raznica":
+
+			t := time.Now()
+			// bot.GetChat
+			reply = fmt.Sprint("Разница между последним корованом: ", t.Sub(update.Message.ReplyToMessage.Time()).Truncate(time.Second))
+
+		case "kogda":
+
+		case "gentle":
+			tolerance = 1
+			reply = fmt.Sprint("Вежливый режим включен")
+		case "hui":
+			tolerance = 0
+			reply = fmt.Sprint("Вежливый режим отключен")
+		case "getupdates":
+			log.Printf("%v", updates)
+
+		default:
+			log.Printf("Не знаю такой команды %s", update.Message.Text)
+			if tolerance == 0 {
+				reply = fmt.Sprint("Хуле доебался")
+			}
+			continue
 		}
 
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, reply)
 		msg.ReplyToMessageID = update.Message.MessageID
+
+		// if msg.Text == "" {
+		// 	continue
+		// }
 
 		bot.Send(msg)
 	}
