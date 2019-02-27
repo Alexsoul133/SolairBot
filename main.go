@@ -143,7 +143,7 @@ func main() {
 			continue
 		}
 
-		switch update.Message.Command() {
+		switch update.Message.CommandWithAt() {
 		case "start":
 			reply = "Привет. Я Солер из Асторы, воин Света, верный слуга короля жёлтого замка Попс Маэллард."
 			continue
@@ -178,10 +178,10 @@ func main() {
 
 		default:
 			log.Printf("Не знаю такой команды %s", update.Message.Text)
-			if tolerance == 0 {
-				reply = fmt.Sprint("Хуле доебался")
+			if tolerance == 1 {
+				continue
 			}
-			continue
+			reply = fmt.Sprint("Хуле доебался")
 		}
 
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, reply)
