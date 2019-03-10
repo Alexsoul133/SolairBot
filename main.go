@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
+	_ "github.com/lib/pq"
 )
 
 var host = os.Getenv("HOST")
@@ -68,7 +69,7 @@ func createTable() error {
 	defer db.Close()
 
 	//Создаем таблицу users
-	if _, err = db.Exec(`CREATE TABLE users(ID SERIAL PRIMARY KEY, TIMESTAMP TIMESTAMP DEFAULT CURRENT_TIMESTAMP, USERNAME TEXT, CHAT_ID INT, MESSAGE TEXT, ANSWER TEXT);`); err != nil {
+	if _, err = db.Exec(`CREATE TABLE users(ID SERIAL PRIMARY KEY, TIMESTAMP TIMESTAMP DEFAULT CURRENT_TIMESTAMP, USERID TEXT, MESSAGE TEXT, TIME TEXT);`); err != nil {
 		return err
 	}
 
@@ -76,7 +77,7 @@ func createTable() error {
 }
 
 //Собираем данные полученные ботом
-func collectData(username string, chatid int64, message string, answer []string) error {
+func collectData(userID int, message string, time string) error {
 
 	//Подключаемся к БД
 	db, err := sql.Open("postgres", dbInfo)
@@ -85,19 +86,25 @@ func collectData(username string, chatid int64, message string, answer []string)
 	}
 	defer db.Close()
 
-	//Конвертируем срез с ответом в строку
-	answ := strings.Join(answer, ", ")
+	// //Конвертируем срез с ответом в строку
+	// answ := strings.Join(answer, ", ")
 
 	//Создаем SQL запрос
-	data := `INSERT INTO users(username, chat_id, message, answer) VALUES($1, $2, $3, $4);`
+	data := `INSERT INTO users(userID, message, time) VALUES($1, $2, $3);`
 
 	//Выполняем наш SQL запрос
-	if _, err = db.Exec(data, `@`+username, chatid, message, answ); err != nil {
+	if _, err = db.Exec(data, userID, message, time); err != nil {
 		return err
 	}
 
 	return nil
 }
+
+// func isCW()bool {
+
+// }
+
+const idCW3 = 265204902
 
 func main() {
 	bot, err := tgbotapi.NewBotAPI("430629496:AAHDBvxHimRzeURldxAz_4v8pp4bKzoeH8s")
@@ -114,6 +121,8 @@ func main() {
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 
+	log.Printf("createTable: %v", createTable())
+
 	updates, err := bot.GetUpdatesChan(u)
 	reply := ""
 
@@ -129,67 +138,65 @@ func main() {
 
 		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
 
-		// if update.Message.Text == "!sun" {
-		// 	bot.Send(tgbotapi.NewStickerShare(update.Message.Chat.ID, "CAADAgADOgAD5R-VAnqF-5FEu7a2Ag"))
-		// 	continue
-		// }
+		if update.Message.Text == "!sun" {
+			bot.Send(tgbotapi.NewStickerShare(update.Message.Chat.ID, "CAADAgADOgAD5R-VAnqF-5FEu7a2Ag"))
+			continue
+		}
 
 		if strings.Contains(update.Message.Text, "!sun") {
 			bot.Send(tgbotapi.NewStickerShare(update.Message.Chat.ID, "CAADAgADOgAD5R-VAnqF-5FEu7a2Ag"))
 			continue
 		}
-		if strings.Contains(update.Message.Text, "Ты") || strings.Contains(update.Message.Text, "задерж") {
-			reply = "Схоронил корован для сравнения"
-			continue
-		}
-
-		switch update.Message.CommandWithAt() {
-		case "start":
-			reply = "Привет. Я Солер из Асторы, воин Света, верный слуга короля жёлтого замка Попс Маэллард."
-			continue
-		case "sun":
-			bot.Send(tgbotapi.NewStickerShare(update.Message.Chat.ID, "CAADAgADOgAD5R-VAnqF-5FEu7a2Ag"))
-			continue
-		case "info":
-			t := time.Now()
-			reply = fmt.Sprintf("@%v \nID: %v \nMessageID: %v \nTimeMsg:  %v \nTimeNow: %v",
-				update.Message.ReplyToMessage.From.UserName,
-				update.Message.ReplyToMessage.From.ID,
-				update.Message.ReplyToMessage.MessageID,
-				update.Message.ReplyToMessage.Time().Format(time.RFC1123Z),
-				t.Format(time.RFC1123Z))
-
-		case "raznica":
-
-			t := time.Now()
-			// bot.GetChat
-			reply = fmt.Sprint("Разница между последним корованом: ", t.Sub(update.Message.ReplyToMessage.Time()).Truncate(time.Second))
-
-		case "kogda":
-
-		case "gentle":
-			tolerance = 1
-			reply = fmt.Sprint("Вежливый режим включен")
-		case "hui":
-			tolerance = 0
-			reply = fmt.Sprint("Вежливый режим отключен")
-		case "getupdates":
-			log.Printf("%v", updates)
-
-		default:
-			log.Printf("Не знаю такой команды %s", update.Message.Text)
-			if tolerance == 1 {
+		if strings.Contains(update.Message.Text, "Ты задержал") {
+			log.Printf("collectData: %v %v %v", update.Message.Time().Format(time.RFC1123Z), update.Message.From.ID, update.Message.Text)
+			if err := collectData(
+				update.Message.From.ID,
+				update.Message.Text,
+				update.Message.ReplyToMessage.Time().Format(time.RFC1123Z)); err != nil {
+				log.Printf("collectData: %v", err)
+				reply = "Схоронил корован для сравнения"
 				continue
 			}
-			reply = fmt.Sprint("Хуле доебался")
+			continue
 		}
-
+		if update.Message.IsCommand() {
+			switch update.Message.Command() {
+			case "start":
+				reply = "Привет. Я Солер из Асторы, воин Света, верный слуга короля жёлтого замка Попс Маэллард."
+				continue
+			case "sun":
+				bot.Send(tgbotapi.NewStickerShare(update.Message.Chat.ID, "CAADAgADOgAD5R-VAnqF-5FEu7a2Ag"))
+				continue
+			case "info":
+				log.Printf("ReplyMsg: %s\nMsg: %s", update.Message.ReplyToMessage.Text, update.Message.Text)
+				t := time.Now()
+				reply = fmt.Sprintf("@%v \nID: %v \nMessageID: %v \nTimeMsg:  %v \nTimeNow: %v",
+					update.Message.ReplyToMessage.From.UserName,
+					update.Message.ReplyToMessage.From.ID,
+					update.Message.ReplyToMessage.MessageID,
+					update.Message.ReplyToMessage.Time().Format(time.RFC1123Z),
+					t.Format(time.RFC1123Z))
+			case "gentle":
+				tolerance = 1
+				reply = fmt.Sprint("Вежливый режим включен")
+			case "hui":
+				tolerance = 0
+				reply = fmt.Sprint("Вежливый режим отключен")
+			case "bunt":
+				reply = fmt.Sprint("*БУНД!!1*")
+			case "getupdates":
+				log.Printf("%v", updates)
+			default:
+				log.Printf("Не знаю такой команды %s", update.Message.Text)
+				if tolerance == 1 {
+					continue
+				}
+				reply = fmt.Sprint("Хуле доебался")
+			}
+		}
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, reply)
 		msg.ReplyToMessageID = update.Message.MessageID
-
-		// if msg.Text == "" {
-		// 	continue
-		// }
+		msg.ParseMode = "markdown"
 
 		bot.Send(msg)
 	}
