@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 
@@ -12,20 +13,25 @@ import (
 	_ "github.com/lib/pq"
 )
 
-var host = os.Getenv("HOST")
-var port = os.Getenv("PORT")
+var host = "localhost"
+var port = 5432
 var user = os.Getenv("USER")
-var password = os.Getenv("PASSWORD")
-var dbname = os.Getenv("DBNAME")
-var sslmode = os.Getenv("SSLMODE")
+var password = 1234
+var dbname = "postgres"
+var sslmode = ""
 
-var dbInfo = fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+var dbInfo = fmt.Sprintf("host=%v port=%v user=%v password=%v dbname=%v sslmode=%v",
 	host,
 	port,
 	user,
 	password,
 	dbname,
 	sslmode)
+
+func clear(v interface{}) {
+	p := reflect.ValueOf(v).Elem()
+	p.Set(reflect.Zero(p.Type()))
+}
 
 // type Korovan string {
 // 	Chat_ID
@@ -69,7 +75,7 @@ func createTable() error {
 	defer db.Close()
 
 	//Создаем таблицу users
-	if _, err = db.Exec(`CREATE TABLE users(ID SERIAL PRIMARY KEY, TIMESTAMP TIMESTAMP DEFAULT CURRENT_TIMESTAMP, USERID TEXT, MESSAGE TEXT, TIME TEXT);`); err != nil {
+	if _, err = db.Exec(`CREATE TABLE users(ID SERIAL PRIMARY KEY, TIMESTAMP TIMESTAMP DEFAULT CURRENT_TIMESTAMP, USERNAME TEXT, CHAT_ID INT, MESSAGE TEXT, ANSWER TEXT);`); err != nil {
 		return err
 	}
 
@@ -77,7 +83,7 @@ func createTable() error {
 }
 
 //Собираем данные полученные ботом
-func collectData(userID int, message string, time string) error {
+func collectData(username string, chatid int64, message string, answer []string) error {
 
 	//Подключаемся к БД
 	db, err := sql.Open("postgres", dbInfo)
@@ -86,14 +92,14 @@ func collectData(userID int, message string, time string) error {
 	}
 	defer db.Close()
 
-	// //Конвертируем срез с ответом в строку
-	// answ := strings.Join(answer, ", ")
+	//Конвертируем срез с ответом в строку
+	answ := strings.Join(answer, ", ")
 
 	//Создаем SQL запрос
-	data := `INSERT INTO users(userID, message, time) VALUES($1, $2, $3);`
+	data := `INSERT INTO users(username, chat_id, message, answer) VALUES($1, $2, $3, $4);`
 
 	//Выполняем наш SQL запрос
-	if _, err = db.Exec(data, userID, message, time); err != nil {
+	if _, err = db.Exec(data, `@`+username, chatid, message, answ); err != nil {
 		return err
 	}
 
@@ -111,11 +117,7 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	tolerance := 1
-	// buf1 := ""
-
 	bot.Debug = true
-
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
 	u := tgbotapi.NewUpdate(0)
@@ -124,7 +126,6 @@ func main() {
 	log.Printf("createTable: %v", createTable())
 
 	updates, err := bot.GetUpdatesChan(u)
-	reply := ""
 
 	// Optional: wait for updates and clear them if you don't want to handle
 	// a large backlog of old messages
@@ -132,71 +133,49 @@ func main() {
 	updates.Clear()
 
 	for update := range updates {
+		reply := ""
 		if update.Message == nil {
 			continue
 		}
 
 		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
-
+		if reflect.TypeOf(update.Message.Text).Kind() != reflect.String && update.Message.Text == "" {
+			log.Println("Не текст. Игнор")
+			continue
+		}
 		if update.Message.Text == "!sun" {
 			bot.Send(tgbotapi.NewStickerShare(update.Message.Chat.ID, "CAADAgADOgAD5R-VAnqF-5FEu7a2Ag"))
 			continue
 		}
 
-		if strings.Contains(update.Message.Text, "!sun") {
+		switch update.Message.Command() {
+		case "start":
+			reply = "Привет. Я Солер из Асторы, воин Света, верный слуга короля жёлтого замка Попс Маэллард."
+			continue
+		case "sun":
 			bot.Send(tgbotapi.NewStickerShare(update.Message.Chat.ID, "CAADAgADOgAD5R-VAnqF-5FEu7a2Ag"))
 			continue
-		}
-		if strings.Contains(update.Message.Text, "Ты задержал") {
-			log.Printf("collectData: %v %v %v", update.Message.Time().Format(time.RFC1123Z), update.Message.From.ID, update.Message.Text)
-			if err := collectData(
-				update.Message.From.ID,
-				update.Message.Text,
-				update.Message.ReplyToMessage.Time().Format(time.RFC1123Z)); err != nil {
-				log.Printf("collectData: %v", err)
-				reply = "Схоронил корован для сравнения"
+		case "info":
+			if update.Message.ReplyToMessage == nil {
+				log.Printf("%v Не является ответом на сообщение. Игнор", update.Message.ReplyToMessage)
 				continue
 			}
-			continue
+			t := time.Now()
+			reply = fmt.Sprintf("Nickname: %v \nID: %v \nMessageID: %v \nTimeMsg:  %v \nTimeNow: %v \nDateFrwd: %v",
+				update.Message.ReplyToMessage.From.UserName,
+				update.Message.ReplyToMessage.From.ID,
+				update.Message.ReplyToMessage.MessageID,
+				update.Message.ReplyToMessage.Time().Format(time.RFC1123Z),
+				t.Format(time.RFC1123Z),
+				update.Message.ReplyToMessage.ForwardDate)
+		case "fwrdid":
+			reply = fmt.Sprintln(update.Message.ReplyToMessage.ForwardFrom.ID)
+		default:
+			log.Printf("Не знаю такой команды %s", update.Message.Text)
 		}
-		if update.Message.IsCommand() {
-			switch update.Message.Command() {
-			case "start":
-				reply = "Привет. Я Солер из Асторы, воин Света, верный слуга короля жёлтого замка Попс Маэллард."
-				continue
-			case "sun":
-				bot.Send(tgbotapi.NewStickerShare(update.Message.Chat.ID, "CAADAgADOgAD5R-VAnqF-5FEu7a2Ag"))
-				continue
-			case "info":
-				log.Printf("ReplyMsg: %s\nMsg: %s", update.Message.ReplyToMessage.Text, update.Message.Text)
-				t := time.Now()
-				reply = fmt.Sprintf("@%v \nID: %v \nMessageID: %v \nTimeMsg:  %v \nTimeNow: %v",
-					update.Message.ReplyToMessage.From.UserName,
-					update.Message.ReplyToMessage.From.ID,
-					update.Message.ReplyToMessage.MessageID,
-					update.Message.ReplyToMessage.Time().Format(time.RFC1123Z),
-					t.Format(time.RFC1123Z))
-			case "gentle":
-				tolerance = 1
-				reply = fmt.Sprint("Вежливый режим включен")
-			case "hui":
-				tolerance = 0
-				reply = fmt.Sprint("Вежливый режим отключен")
-			case "bunt":
-				reply = fmt.Sprint("*БУНД!!1*")
-			case "getupdates":
-				log.Printf("%v", updates)
-			default:
-				log.Printf("Не знаю такой команды %s", update.Message.Text)
-				if tolerance == 1 {
-					continue
-				}
-				reply = fmt.Sprint("Хуле доебался")
-			}
-		}
+
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, reply)
 		msg.ReplyToMessageID = update.Message.MessageID
-		msg.ParseMode = "markdown"
 
 		bot.Send(msg)
 	}
