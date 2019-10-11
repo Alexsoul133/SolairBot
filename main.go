@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"reflect"
 	"strings"
@@ -75,7 +76,7 @@ func createTable() error {
 	defer db.Close()
 
 	//Создаем таблицу users
-	if _, err = db.Exec(`CREATE TABLE users(ID SERIAL PRIMARY KEY, TIMESTAMP TIMESTAMP DEFAULT CURRENT_TIMESTAMP, USERNAME TEXT, CHAT_ID INT, MESSAGE TEXT, ANSWER TEXT);`); err != nil {
+	if _, err = db.Exec(`CREATE TABLE users(ID SERIAL PRIMARY KEY, TIMESTAMP TIMESTAMP DEFAULT CURRENT_TIMESTAMP, USER_ID INT, USERNAME TEXT, CHAT_ID INT, MESSAGE TEXT, ANSWER TEXT);`); err != nil {
 		return err
 	}
 
@@ -83,7 +84,7 @@ func createTable() error {
 }
 
 //Собираем данные полученные ботом
-func collectData(username string, chatid int64, message string, answer []string) error {
+func collectData(userid int, username string, chatid int, message string, answer []string) error {
 
 	//Подключаемся к БД
 	db, err := sql.Open("postgres", dbInfo)
@@ -96,10 +97,10 @@ func collectData(username string, chatid int64, message string, answer []string)
 	answ := strings.Join(answer, ", ")
 
 	//Создаем SQL запрос
-	data := `INSERT INTO users(username, chat_id, message, answer) VALUES($1, $2, $3, $4);`
+	data := `INSERT INTO users(user_id,username, chat_id, message, answer) VALUES($1, $2, $3, $4, $5);`
 
 	//Выполняем наш SQL запрос
-	if _, err = db.Exec(data, `@`+username, chatid, message, answ); err != nil {
+	if _, err = db.Exec(data, userid, `@`+username, chatid, message, answ); err != nil {
 		return err
 	}
 
@@ -111,6 +112,12 @@ func collectData(username string, chatid int64, message string, answer []string)
 // }
 
 const idCW3 = 265204902
+
+var sun = []string{"CAADAgADOgAD5R-VAnqF-5FEu7a2Ag",
+	"CAADBAADCAIAAkb3JwABgT3OjSZrl3gC",
+	"CAADBAADHwIAAkb3JwACZMCHHkNgmgI",
+	"CAADBAADDwIAAkb3JwABnscPo7pyJQYC",
+	"CAADBAAD-QEAAkb3JwABrrmzBNftMI8C"}
 
 func main() {
 	bot, err := tgbotapi.NewBotAPI("430629496:AAHDBvxHimRzeURldxAz_4v8pp4bKzoeH8s")
@@ -151,9 +158,10 @@ func main() {
 		switch update.Message.Command() {
 		case "start":
 			reply = "Привет. Я Солер из Асторы, воин Света, верный слуга короля жёлтого замка Попс Маэллард."
-			continue
+			//continue
 		case "sun":
-			bot.Send(tgbotapi.NewStickerShare(update.Message.Chat.ID, "CAADAgADOgAD5R-VAnqF-5FEu7a2Ag"))
+			rand.Seed(time.Now().Unix())
+			bot.Send(tgbotapi.NewStickerShare(update.Message.Chat.ID, sun[rand.Intn(len(sun))]))
 			continue
 		case "info":
 			if update.Message.ReplyToMessage == nil {
@@ -161,13 +169,24 @@ func main() {
 				continue
 			}
 			t := time.Now()
-			reply = fmt.Sprintf("Nickname: %v \nID: %v \nMessageID: %v \nTimeMsg:  %v \nTimeNow: %v \nDateFrwd: %v",
+			reply = fmt.Sprintf("Nickname: %v \nID: %v \nMessageID: %v \nTimeMsg:  %v \nTimeNow: %v \nDateFrwd: %v \nIsBot? %v \n%v",
 				update.Message.ReplyToMessage.From.UserName,
 				update.Message.ReplyToMessage.From.ID,
 				update.Message.ReplyToMessage.MessageID,
 				update.Message.ReplyToMessage.Time().Format(time.RFC1123Z),
 				t.Format(time.RFC1123Z),
-				update.Message.ReplyToMessage.ForwardDate)
+				update.Message.ReplyToMessage.ForwardDate,
+				update.Message.ReplyToMessage.Entities)
+		case "reg":
+			if update.Message.ReplyToMessage == nil {
+				log.Printf("%v Не является ответом на сообщение. Игнор", update.Message.ReplyToMessage)
+				continue
+			}
+			err = collectData(update.Message.ReplyToMessage.From.ID, update.Message.ReplyToMessage.From.UserName, update.Message.From.ID, update.Message.Text, []string{update.Message.ReplyToMessage.Text})
+			if err != nil {
+				log.Println("collect data: err")
+			}
+			continue
 		case "fwrdid":
 			reply = fmt.Sprintln(update.Message.ReplyToMessage.ForwardFrom.ID)
 		default:
